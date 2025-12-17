@@ -1,0 +1,27 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
+}
+
+generator pothos {
+  provider = "prisma-pothos-types"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Property {
+  id           String        @id @default(uuid())
+  name         String
+  propertyUses PropertyUse[]
+}
+
+model PropertyUse {
+  id         String   @id @default(uuid())
+  name       String
+  unitCount  Int
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id])
+}
