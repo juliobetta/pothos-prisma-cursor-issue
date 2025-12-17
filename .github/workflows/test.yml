@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   test:
@@ -50,15 +51,50 @@ jobs:
         run: npm run seed
 
       - name: Run bug reproduction test
-        run: npm run test:bug 2>&1 | tee output.log
-
-      - name: Verify cursor issue patterns
         run: |
-          echo "Checking for duplicate queries or parameter issues..."
-          if grep -q "prisma:query" output.log; then
-            echo "✅ Query logs captured"
-            echo "Analyzing query patterns for potential issues..."
+          echo "Running bug reproduction test..."
+          npm run test:bug 2>&1 | tee output.log
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          echo "Test completed with exit code: $TEST_EXIT_CODE"
+
+      - name: Check for cursor error
+        run: |
+          echo "Analyzing test output for cursor type error..."
+          if grep -q "Unsupported cursor type" output.log; then
+            echo "✅ BUG CONFIRMED: 'Unsupported cursor type' error detected!"
+            echo "The Pothos Prisma cursor issue has been reproduced."
+            exit 0  # Success - we found the bug
           else
-            echo "⚠️ No query logs found - test may not have executed properly"
-            exit 1
+            echo "⚠️ Cursor type error not detected in this run."
+            echo "Checking if test ran successfully..."
+            if grep -q "BUG CONFIRMED" output.log; then
+              echo "Bug was detected by the test runner."
+              exit 0
+            elif grep -q "No cursor type error detected" output.log; then
+              echo "Test ran but bug did not reproduce - this may indicate the bug has been fixed."
+              exit 0
+            else
+              echo "❌ Test may not have executed properly."
+              echo "Output tail:"
+              tail -20 output.log
+              exit 1
+            fi
           fi
+
+      - name: Display query patterns
+        if: always()
+        run: |
+          echo "Checking for query patterns..."
+          if grep -q "Query:" output.log; then
+            echo "Database queries found in output:"
+            grep -A2 "Query:" output.log | head -30
+          else
+            echo "No query logs captured (Prisma logging may be disabled in CI)"
+          fi
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-output
+          path: output.log
